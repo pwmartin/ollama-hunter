@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import time
+import csv
 import json
 
 # === USER INPUT ===
@@ -11,8 +12,7 @@ BASE_URL = "https://www.shodan.io/search"
 QUERY = 'port:11434 product:"Ollama"'
 START_PAGE = 1
 DELAY = 2  # seconds between page fetches
-DETAIL_TIMEOUT = 5  # timeout for each IP's /api/tags
-OUTPUT_FILE = "ollama_hosts_with_models.txt"
+DETAIL_TIMEOUT = 10  # timeout for each IP's /api/tags
 
 # === HEADERS ===
 HEADERS = {
@@ -58,50 +58,128 @@ def fetch_models_from_ip(ip):
         res = requests.get(url, timeout=DETAIL_TIMEOUT)
         res.raise_for_status()
         data = res.json()
-
-        models = [m.get("name") for m in data.get("models", []) if "name" in m]
-        return models
+        
+        detailed_models = []
+        for m in data.get("models", []):
+            details = m.get("details", {})
+            detailed_models.append({
+                "name": m.get("name"),
+                "modified_at": m.get("modified_at"),
+                "parameter_size": details.get("parameter_size"),
+                "quantization_level": details.get("quantization_level"),
+            })
+        return detailed_models
     except (requests.RequestException, json.JSONDecodeError) as e:
         return None
 
+def parse_size_to_gb(size_str):
+    """Converts a model size string (e.g., '7B', '750M') to a float in GB."""
+    if not isinstance(size_str, str):
+        return 0.0
+    size_str = size_str.lower().strip()
+    try:
+        if 'b' in size_str:
+            return float(size_str.replace('b', ''))
+        if 'm' in size_str:
+            return float(size_str.replace('m', '')) / 1000
+    except (ValueError, TypeError):
+        return 0.0
+    return 0.0
+
+def estimate_host_performance(detailed_models):
+    """Analyzes model details to make an educated guess about host performance."""
+    if not detailed_models:
+        return "Unknown"
+
+    max_param_size_gb = 0
+    has_unquantized_large_model = False
+    all_heavily_quantized = True
+    
+    # Quantization levels from best to worst
+    high_quality_quants = {'F16', 'BF16', 'Q8_0', 'Q6_K'}
+    low_quality_quants = {'Q4_0', 'Q4_K_M', 'Q3_K_S', 'Q2_K'}
+
+    for model in detailed_models:
+        param_size_gb = parse_size_to_gb(model.get("parameter_size"))
+        if param_size_gb > max_param_size_gb:
+            max_param_size_gb = param_size_gb
+
+        quant_level = model.get("quantization_level", "unknown")
+        
+        # Check for unquantized large models
+        if param_size_gb > 25 and quant_level in high_quality_quants:
+            has_unquantized_large_model = True
+
+        # Check if any model is NOT heavily quantized
+        if quant_level not in low_quality_quants and not quant_level.startswith('IQ'):
+            all_heavily_quantized = False
+
+    if has_unquantized_large_model or max_param_size_gb > 60:
+        return "High-Performance"
+    
+    if max_param_size_gb > 25:
+        return "Mid-Range"
+
+    if max_param_size_gb > 10 and all_heavily_quantized:
+        return "CPU-Only / Low-RAM"
+
+    if max_param_size_gb < 10:
+        return "Small-Model / Hobbyist"
+
+    return "Mid-Range" # Default for intermediate cases
+
 def main():
     all_ips = set()
+    csv_output_file = "ollama_models_details.csv"
 
     try:
         page = START_PAGE
-        with open(OUTPUT_FILE, "a") as f:
-            while True:
-                ips = scrape_ips_from_page(page)
-                if not ips:
-                    print("[*] No more results found. Stopping.")
-                    break
+        while True:
+            ips = scrape_ips_from_page(page)
+            if not ips:
+                print("[*] No more results found. Stopping.")
+                break
 
-                for ip in ips:
-                    if ip in all_ips:
-                        continue
+            for ip in ips:
+                if ip in all_ips:
+                    continue
 
-                    print(f"[+] Checking {ip}...")
-                    models = fetch_models_from_ip(ip)
-                    if models:
-                        print(f" {ip}:")
-                        f.write(f"{ip}:\n")
-                        for model in models:
-                            print(f"  - {model}")
-                            f.write(f"  - {model}\n")
-                        f.write("\n")
-                    else:
-                        print(f" [-] {ip} has no models or is unreachable.")
+                print(f"[+] Checking {ip}...")
+                detailed_models = fetch_models_from_ip(ip)
+                if detailed_models:
+                    print(f"  [>] Found {len(detailed_models)} models on {ip}")
+                    performance_guess = estimate_host_performance(detailed_models)
+                    print(f"  [i] Probable performance: {performance_guess}")
+                    
+                    # Write to CSV
+                    with open(csv_output_file, "a", newline="", encoding="utf-8") as csvfile:
+                        fieldnames = ["ip_address", "model_name", "parameter_size", "quantization_level", "modified_at", "probable_performance"]
+                        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                        if csvfile.tell() == 0:
+                            writer.writeheader()
+                        
+                        for model in detailed_models:
+                            writer.writerow({
+                                "ip_address": ip,
+                                "probable_performance": performance_guess,
+                                "model_name": model["name"],
+                                "parameter_size": model["parameter_size"],
+                                "quantization_level": model["quantization_level"],
+                                "modified_at": model["modified_at"],
+                            })
+                else:
+                    print(f" [-] {ip} has no models or is unreachable.")
 
-                    all_ips.add(ip)
-                    time.sleep(1)
+                all_ips.add(ip)
+                time.sleep(1)
 
-                page += 1
-                time.sleep(DELAY)
+            page += 1
+            time.sleep(DELAY)
 
     except KeyboardInterrupt:
         print("\n[!] Interrupted by user.")
 
-    print(f"[✓] Done. Results saved to: {OUTPUT_FILE}")
+    print(f"\n[✓] Done. Detailed results saved to: {csv_output_file}")
 
 if __name__ == "__main__":
     main()
