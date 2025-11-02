@@ -41,25 +41,53 @@ def run_refresh():
 
 @app.route("/", methods=["GET"])
 def index():
-    """Renders the web UI for displaying live hosts."""
+    """Renders the web UI for displaying live hosts with sorting and filtering."""
     conn = database.get_db_connection()
     cursor = conn.cursor()
-    
-    cursor.execute("SELECT id, ip_address, country, last_seen, performance FROM hosts WHERE is_alive = 1 ORDER BY last_seen DESC")
+
+    # Get filter and sort parameters from URL
+    selected_models = request.args.getlist('models')
+    sort_by = request.args.get('sort_by', 'last_seen') # Default to last_seen
+
+    # Fetch all unique models for the filter dropdown
+    cursor.execute("SELECT DISTINCT name FROM models ORDER BY name ASC")
+    all_models = [row['name'] for row in cursor.fetchall()]
+
+    # Base query
+    query = "SELECT id, ip_address, country, last_seen, performance FROM hosts WHERE is_alive = 1"
+    params = []
+
+    # Add filtering by model
+    if selected_models:
+        query += " AND id IN (SELECT host_id FROM models WHERE name IN ({seq}))".format(
+            seq=','.join(['?' for _ in selected_models]))
+        params.extend(selected_models)
+
+    # Add sorting
+    if sort_by == 'performance':
+        query += " ORDER BY CASE performance WHEN 'High-Performance' THEN 1 WHEN 'Mid-Range' THEN 2 WHEN 'CPU-Only / Low-RAM' THEN 3 WHEN 'Small-Model / Hobbyist' THEN 4 ELSE 5 END ASC"
+    else: # Default to last_seen
+        query += " ORDER BY last_seen DESC"
+
+    cursor.execute(query, params)
     hosts = cursor.fetchall()
     
     hosts_with_models = []
     for host in hosts:
         host_data = dict(host)
-        
         cursor.execute("SELECT name, parameter_size, quantization_level FROM models WHERE host_id = ?", (host['id'],))
         models = cursor.fetchall()
-        
         host_data["models"] = [dict(model) for model in models]
         hosts_with_models.append(host_data)
         
     conn.close()
-    return render_template("index.html", hosts=hosts_with_models)
+    return render_template(
+        "index.html", 
+        hosts=hosts_with_models, 
+        all_models=all_models, 
+        selected_models=selected_models,
+        sort_by=sort_by
+    )
 
 @app.route("/api/providers", methods=["GET"])
 def get_providers():
