@@ -1,8 +1,30 @@
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 import database
 
 app = Flask(__name__)
+
+@app.route("/", methods=["GET"])
+def index():
+    """Renders the web UI for displaying live hosts."""
+    conn = database.get_db_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, ip_address, performance FROM hosts WHERE is_alive = 1 ORDER BY last_seen DESC")
+    hosts = cursor.fetchall()
+    
+    hosts_with_models = []
+    for host in hosts:
+        host_data = dict(host)
+        
+        cursor.execute("SELECT name, parameter_size, quantization_level FROM models WHERE host_id = ?", (host['id'],))
+        models = cursor.fetchall()
+        
+        host_data["models"] = [dict(model) for model in models]
+        hosts_with_models.append(host_data)
+        
+    conn.close()
+    return render_template("index.html", hosts=hosts_with_models)
 
 @app.route("/api/providers", methods=["GET"])
 def get_providers():
