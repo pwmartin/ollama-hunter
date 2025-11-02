@@ -48,6 +48,9 @@ def index():
     # Get filter and sort parameters from URL
     selected_models = request.args.getlist('models')
     sort_by = request.args.get('sort_by', 'last_seen') # Default to last_seen
+    order = request.args.get('order', 'desc')
+    if order not in ['asc', 'desc']:
+        order = 'desc'
 
     # Fetch all unique models for the filter dropdown
     cursor.execute("SELECT DISTINCT name FROM models ORDER BY name ASC")
@@ -65,9 +68,9 @@ def index():
 
     # Add sorting
     if sort_by == 'performance':
-        query += " ORDER BY CASE performance WHEN 'High-Performance' THEN 1 WHEN 'Mid-Range' THEN 2 WHEN 'CPU-Only / Low-RAM' THEN 3 WHEN 'Small-Model / Hobbyist' THEN 4 ELSE 5 END ASC"
+        query += f" ORDER BY CASE performance WHEN 'High-Performance' THEN 1 WHEN 'Mid-Range' THEN 2 WHEN 'CPU-Only / Low-RAM' THEN 3 WHEN 'Small-Model / Hobbyist' THEN 4 ELSE 5 END {order}"
     else: # Default to last_seen
-        query += " ORDER BY last_seen DESC"
+        query += f" ORDER BY last_seen {order}"
 
     cursor.execute(query, params)
     hosts = cursor.fetchall()
@@ -86,7 +89,8 @@ def index():
         hosts=hosts_with_models, 
         all_models=all_models, 
         selected_models=selected_models,
-        sort_by=sort_by
+        sort_by=sort_by,
+        order=order
     )
 
 @app.route("/api/providers", methods=["GET"])
