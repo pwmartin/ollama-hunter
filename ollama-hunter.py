@@ -1,3 +1,4 @@
+
 import requests
 from bs4 import BeautifulSoup
 import time
@@ -9,7 +10,7 @@ polito_cookie = input("Enter your Shodan 'polito' cookie value: ").strip()
 
 # === SETTINGS ===
 BASE_URL = "https://www.shodan.io/search"
-QUERY = 'port:11434 product:"Ollama"'
+QUERY = 'port:11434 product:"Ollama" country:"US"'
 START_PAGE = 1
 DELAY = 2  # seconds between page fetches
 DETAIL_TIMEOUT = 10  # timeout for each IP's /api/tags
