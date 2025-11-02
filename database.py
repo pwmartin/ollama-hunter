@@ -20,6 +20,7 @@ def create_database():
         CREATE TABLE IF NOT EXISTS hosts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ip_address TEXT UNIQUE NOT NULL,
+            country TEXT,
             last_seen TEXT NOT NULL,
             performance TEXT,
             is_alive INTEGER DEFAULT 1
@@ -40,30 +41,34 @@ def create_database():
     ''')
     conn.commit()
 
-def add_or_update_host(ip_address, performance, is_alive=1):
+def add_or_update_host(ip_address, performance, is_alive=1, country=None):
     """Adds a new host or updates the last_seen, performance, and is_alive status of an existing one."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     now = datetime.utcnow().isoformat()
     
-    cursor.execute("SELECT id FROM hosts WHERE ip_address = ?", (ip_address,))
+    cursor.execute("SELECT id, country FROM hosts WHERE ip_address = ?", (ip_address,))
     host = cursor.fetchone()
     
     if host:
         # Update existing host
+        host_id = host['id']
+        # Don't overwrite an existing country with None
+        if country is None:
+            country = host['country']
+
         cursor.execute('''
             UPDATE hosts
-            SET last_seen = ?, performance = ?, is_alive = ?
+            SET last_seen = ?, performance = ?, is_alive = ?, country = ?
             WHERE id = ?
-        ''', (now, performance, is_alive, host['id']))
-        host_id = host['id']
+        ''', (now, performance, is_alive, country, host_id))
     else:
         # Insert new host
         cursor.execute('''
-            INSERT INTO hosts (ip_address, last_seen, performance, is_alive)
-            VALUES (?, ?, ?, ?)
-        ''', (ip_address, now, performance, is_alive))
+            INSERT INTO hosts (ip_address, last_seen, performance, is_alive, country)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (ip_address, now, performance, is_alive, country))
         host_id = cursor.lastrowid
         
     conn.commit()

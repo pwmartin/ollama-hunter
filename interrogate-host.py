@@ -80,6 +80,22 @@ def estimate_host_performance(detailed_models):
 
     return "Mid-Range"
 
+import subprocess
+
+def get_country_from_ip(ip):
+    """Gets the country of an IP address using the whois command."""
+    try:
+        # We pipe to grep to find the country line reliably
+        command = f"whois {ip} | grep -i country"
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout:
+            # The output is usually in the format "Country: US", so we split and take the last part.
+            return result.stdout.strip().split(':')[-1].strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        # Handle cases where whois isn't installed or times out
+        return None
+    return None
+
 def main():
     parser = argparse.ArgumentParser(
         description="Interrogate a single Ollama host and save its model details to the database.",
@@ -94,11 +110,12 @@ def main():
     detailed_models = fetch_models_from_ip(args.host)
 
     if detailed_models:
+        country = get_country_from_ip(args.host)
         performance_guess = estimate_host_performance(detailed_models)
-        print(f"  [>] Found {len(detailed_models)} models on {args.host}")
+        print(f"  [>] Found {len(detailed_models)} models on {args.host} ({country or 'Unknown Country'})")
         print(f"  [i] Probable performance: {performance_guess}")
 
-        host_id = database.add_or_update_host(args.host, performance_guess, is_alive=1)
+        host_id = database.add_or_update_host(args.host, performance_guess, is_alive=1, country=country)
         database.clear_models_for_host(host_id)
         database.add_models(host_id, detailed_models)
         

@@ -28,7 +28,7 @@ HEADERS = {
 }
 
 # === REST OF THE SCRIPT ===
-def scrape_ips_from_page(page):
+def scrape_hosts_from_page(page):
     params = {
         "query": QUERY,
         "page": page
@@ -44,14 +44,17 @@ def scrape_ips_from_page(page):
     soup = BeautifulSoup(response.text, "html.parser")
     results = soup.find_all("div", class_="result")
 
-    ips = []
+    hosts = []
     for result in results:
         a_tag = result.find("a", class_="title", href=True)
+        country_span = result.find("span", class_="country_name")
+        
         if a_tag and "/host/" in a_tag["href"]:
             ip = a_tag["href"].split("/host/")[1]
-            ips.append(ip)
+            country = country_span.text.strip() if country_span else None
+            hosts.append({"ip": ip, "country": country})
 
-    return ips
+    return hosts
 
 def fetch_models_from_ip(ip):
     url = f"http://{ip}:11434/api/tags"
@@ -136,18 +139,21 @@ def main():
     try:
         page = START_PAGE
         while True:
-            ips = scrape_ips_from_page(page)
-            if not ips:
+            hosts = scrape_hosts_from_page(page)
+            if not hosts:
                 print("[*] No more results found. Stopping.")
                 break
 
-            for ip in ips:
+            for host_data in hosts:
+                ip = host_data['ip']
+                country = host_data['country']
+
                 if ip in processed_ips:
                     continue
                 
                 processed_ips.add(ip)
 
-                print(f"[+] Checking {ip}...")
+                print(f"[+] Checking {ip} ({country or 'Unknown Country'})...")
                 detailed_models = fetch_models_from_ip(ip)
 
                 if detailed_models:
@@ -155,7 +161,7 @@ def main():
                     print(f"  [>] Found {len(detailed_models)} models on {ip}")
                     print(f"  [i] Probable performance: {performance_guess}")
 
-                    host_id = database.add_or_update_host(ip, performance_guess, is_alive=1)
+                    host_id = database.add_or_update_host(ip, performance_guess, is_alive=1, country=country)
                     database.clear_models_for_host(host_id)
                     database.add_models(host_id, detailed_models)
                     print(f"  [✓] Host {ip} and its models saved to the database.")

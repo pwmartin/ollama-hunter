@@ -28,6 +28,8 @@
             <thead>
                 <tr>
                     <th>IP Address</th>
+                    <th>Country</th>
+                    <th>Last Seen (UTC)</th>
                     <th>Probable Performance</th>
                     <th>Models</th>
                 </tr>
@@ -36,6 +38,8 @@
                 {% for host in hosts %}
                 <tr>
                     <td>{{ host.ip_address }}</td>
+                    <td>{{ host.country or 'N/A' }}</td>
+                    <td>{{ host.last_seen }}</td>
                     <td>
                         {% set perf = host.performance | lower %}
                         {% if 'high' in perf %}

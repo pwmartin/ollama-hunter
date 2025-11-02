@@ -10,7 +10,7 @@ def index():
     conn = database.get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, ip_address, performance FROM hosts WHERE is_alive = 1 ORDER BY last_seen DESC")
+    cursor.execute("SELECT id, ip_address, country, last_seen, performance FROM hosts WHERE is_alive = 1 ORDER BY last_seen DESC")
     hosts = cursor.fetchall()
     
     hosts_with_models = []
@@ -33,7 +33,7 @@ def get_providers():
     cursor = conn.cursor()
     
     # Fetch live hosts
-    cursor.execute("SELECT id, ip_address, performance FROM hosts WHERE is_alive = 1")
+    cursor.execute("SELECT id, ip_address, country, last_seen, performance FROM hosts WHERE is_alive = 1")
     hosts = cursor.fetchall()
     
     providers = []
