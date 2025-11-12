@@ -1,5 +1,5 @@
 
-from flask import Flask, jsonify, render_template, redirect, url_for, request, flash
+from flask import Flask, jsonify, render_template, redirect, url_for, request, flash, Response
 import database
 import subprocess
 import sys
@@ -32,11 +32,30 @@ def run_refresh():
     try:
         python_executable = sys.executable
         subprocess.Popen([python_executable, "refresh-hosts.py"])
-        flash("Host refresh process started in the background. Refresh the page in a few moments to see results.", "success")
     except Exception as e:
         flash(f"Failed to start host refresh: {e}", "error")
 
     return redirect(url_for('index'))
+
+
+@app.route("/stream-refresh")
+def stream_refresh():
+    """Runs the refresh-hosts.py script and streams its output."""
+    def generate():
+        python_executable = sys.executable
+        process = subprocess.Popen(
+            [python_executable, "refresh-hosts.py"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+        for line in process.stdout:
+            yield f"data: {line}\n\n"
+        process.wait()
+        yield "data: __END__\n\n"
+    return Response(generate(), mimetype='text/event-stream')
 
 
 @app.route("/", methods=["GET"])

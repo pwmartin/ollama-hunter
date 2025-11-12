@@ -88,32 +88,32 @@ def estimate_host_performance(detailed_models):
 def main():
     database.create_database() # Ensure db is created
     
-    print("[+] Starting host refresh...")
+    print("[+] Starting host refresh...", flush=True)
     hosts = database.get_all_hosts()
     
     for host in hosts:
         ip = host['ip_address']
         host_id = host['id']
         
-        print(f"[+] Refreshing {ip}...")
+        print(f"[+] Refreshing {ip}...", flush=True)
         detailed_models = fetch_models_from_ip(ip)
         
         if detailed_models:
             performance_guess = estimate_host_performance(detailed_models)
-            print(f"  [>] Found {len(detailed_models)} models on {ip}")
-            print(f"  [i] Probable performance: {performance_guess}")
+            print(f"  [>] Found {len(detailed_models)} models on {ip}", flush=True)
+            print(f"  [i] Probable performance: {performance_guess}", flush=True)
             
             database.add_or_update_host(ip, performance_guess, is_alive=1) # Update last_seen and performance
             database.clear_models_for_host(host_id)
             database.add_models(host_id, detailed_models)
-            print(f"  [✓] Host {ip} and its models updated in the database.")
+            print(f"  [✓] Host {ip} and its models updated in the database.", flush=True)
         else:
-            print(f" [-] {ip} is unreachable or has no models. Marking as dead.")
+            print(f" [-] {ip} is unreachable or has no models. Marking as dead.", flush=True)
             database.mark_host_as_dead(host_id)
             
         time.sleep(1) # Be nice to the hosts
         
-    print("\n[✓] Host refresh complete. Database is up to date.")
+    print("\n[✓] Host refresh complete. Database is up to date.", flush=True)
 
 if __name__ == "__main__":
     main()

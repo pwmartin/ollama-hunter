@@ -54,12 +54,13 @@
 
         /* Modal styles */
         .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); }
-        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 600px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-content { background-color: #fefefe; margin: 10% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 700px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
         .modal-header { padding-bottom: 10px; border-bottom: 1px solid #ddd; }
         .modal-header h2 { margin: 0; }
         .close-button { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
         .close-button:hover, .close-button:focus { color: #000; }
-        #modal-body-content { margin-top: 15px; }
+        #modal-body-content, #refresh-output { margin-top: 15px; }
+        #refresh-output { background-color: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; height: 300px; overflow-y: auto; white-space: pre-wrap; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -81,9 +82,7 @@
                 <input type="text" name="shodan-cookie" placeholder="Enter Shodan Cookie" required>
                 <button type="submit">Run Ollama Compass</button>
             </form>
-            <form action="{{ url_for('run_refresh') }}" method="post">
-                <button type="submit">Refresh Live Hosts</button>
-            </form>
+            <button id="refresh-hosts-btn">Refresh Live Hosts</button>
         </div>
 
         <div class="filters">
@@ -157,7 +156,7 @@
         </table>
     </div>
 
-    <!-- The Modal -->
+    <!-- IP Status Modal -->
     <div id="statusModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -170,12 +169,24 @@
         </div>
     </div>
 
+    <!-- Refresh Hosts Modal -->
+    <div id="refreshModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="close-button refresh-close">&times;</span>
+                <h2>Refreshing Hosts...</h2>
+            </div>
+            <pre id="refresh-output">Starting refresh process...</pre>
+        </div>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            const modal = document.getElementById('statusModal');
+            // IP Status Modal Logic
+            const statusModal = document.getElementById('statusModal');
             const modalTitle = document.getElementById('modal-title');
             const modalBody = document.getElementById('modal-body-content');
-            const closeButton = document.querySelector('.close-button');
+            const statusCloseButton = statusModal.querySelector('.close-button');
 
             document.querySelectorAll('.ip-link').forEach(link => {
                 link.addEventListener('click', function(e) {
@@ -183,7 +194,7 @@
                     const ip = this.dataset.ip;
                     modalTitle.innerText = `Running Models on ${ip}`;
                     modalBody.innerHTML = '<p>Loading...</p>';
-                    modal.style.display = 'block';
+                    statusModal.style.display = 'block';
 
                     fetch(`/api/host/${ip}/status`)
                         .then(response => response.json())
@@ -209,13 +220,55 @@
                 });
             });
 
-            closeButton.onclick = function() {
-                modal.style.display = 'none';
+            statusCloseButton.onclick = function() {
+                statusModal.style.display = 'none';
+            }
+
+            // Refresh Hosts Modal Logic
+            const refreshModal = document.getElementById('refreshModal');
+            const refreshOutput = document.getElementById('refresh-output');
+            const refreshCloseButton = refreshModal.querySelector('.refresh-close');
+            const refreshBtn = document.getElementById('refresh-hosts-btn');
+
+            function startRefresh() {
+                refreshModal.style.display = 'block';
+                refreshOutput.textContent = 'Starting refresh process...\n';
+                
+                const eventSource = new EventSource('/stream-refresh');
+
+                eventSource.onmessage = function(event) {
+                    if (event.data.includes('__END__')) {
+                        eventSource.close();
+                        refreshOutput.textContent += '\n\nProcess finished. You can now close this window.';
+                        const reloadBtn = document.createElement('button');
+                        reloadBtn.textContent = 'Reload Page';
+                        reloadBtn.onclick = () => window.location.reload();
+                        refreshOutput.appendChild(reloadBtn);
+                    } else {
+                        refreshOutput.textContent += event.data;
+                    }
+                    refreshOutput.scrollTop = refreshOutput.scrollHeight;
+                };
+
+                eventSource.onerror = function(err) {
+                    console.error("EventSource failed:", err);
+                    refreshOutput.textContent += '\n\nError connecting to the server. Please try again.';
+                    eventSource.close();
+                };
+            }
+
+            refreshBtn.addEventListener('click', startRefresh);
+
+            refreshCloseButton.onclick = function() {
+                refreshModal.style.display = 'none';
             }
 
             window.onclick = function(event) {
-                if (event.target == modal) {
-                    modal.style.display = 'none';
+                if (event.target == statusModal) {
+                    statusModal.style.display = 'none';
+                }
+                if (event.target == refreshModal) {
+                    refreshModal.style.display = 'none';
                 }
             }
         });
